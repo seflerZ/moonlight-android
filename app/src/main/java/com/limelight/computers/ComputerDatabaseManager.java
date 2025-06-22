@@ -67,18 +67,18 @@ public class ComputerDatabaseManager {
                 ADDRESSES_COLUMN_NAME, MAC_ADDRESS_COLUMN_NAME, SERVER_CERT_COLUMN_NAME));
 
         // Move all computers from the old DB (if any) to the new one
-        List<ComputerDetails> oldComputers = LegacyDatabaseReader.migrateAllComputers(c);
-        for (ComputerDetails computer : oldComputers) {
-            updateComputer(computer);
-        }
-        oldComputers = LegacyDatabaseReader2.migrateAllComputers(c);
-        for (ComputerDetails computer : oldComputers) {
-            updateComputer(computer);
-        }
-        oldComputers = LegacyDatabaseReader3.migrateAllComputers(c);
-        for (ComputerDetails computer : oldComputers) {
-            updateComputer(computer);
-        }
+//        List<ComputerDetails> oldComputers = LegacyDatabaseReader.migrateAllComputers(c);
+//        for (ComputerDetails computer : oldComputers) {
+//            updateComputer(computer);
+//        }
+//        oldComputers = LegacyDatabaseReader2.migrateAllComputers(c);
+//        for (ComputerDetails computer : oldComputers) {
+//            updateComputer(computer);
+//        }
+//        oldComputers = LegacyDatabaseReader3.migrateAllComputers(c);
+//        for (ComputerDetails computer : oldComputers) {
+//            updateComputer(computer);
+//        }
     }
 
     public void deleteComputer(ComputerDetails details) {

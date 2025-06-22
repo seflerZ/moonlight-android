@@ -290,6 +290,18 @@ public class ComputerManagerService extends Service {
             return null;
         }
 
+        public ComputerDetails getComputerByAddress(String address) {
+            synchronized (pollingTuples) {
+                for (PollingTuple tuple : pollingTuples) {
+                    if (address.equals(tuple.computer.manualAddress.toString())) {
+                        return tuple.computer;
+                    }
+                }
+            }
+
+            return null;
+        }
+
         public void invalidateStateForComputer(String uuid) {
             synchronized (pollingTuples) {
                 for (PollingTuple tuple : pollingTuples) {
