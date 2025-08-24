@@ -1104,15 +1104,16 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                     }
                                 }
                                 else {
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                                        // Use a PTS that will cause this frame to be dropped if another comes in within
-                                        // the same V-sync period
-                                        videoDecoder.releaseOutputBuffer(lastIndex, System.nanoTime());
-                                        graphicsListener.onGraphicsUpdate(surface, 0, 0, 1920, 1080);
-                                    }
-                                    else {
+//                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+//                                        // Use a PTS that will cause this frame to be dropped if another comes in within
+//                                        // the same V-sync period
+//                                        videoDecoder.releaseOutputBuffer(lastIndex, System.nanoTime());
+//
+//                                    }
+//                                    else {
                                         videoDecoder.releaseOutputBuffer(lastIndex, true);
-                                    }
+                                        graphicsListener.onGraphicsUpdate(surface, 0, 0, prefs.width, prefs.height);
+//                                    }
                                 }
 
                                 activeWindowVideoStats.totalFramesRendered++;
