@@ -23,6 +23,10 @@ import com.limelight.preferences.PreferenceConfiguration;
 import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.SurfaceTexture;
+import android.media.Image;
 import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
 import android.media.MediaFormat;
@@ -31,11 +35,15 @@ import android.media.MediaCodec.CodecException;
 import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.Looper;
 import android.os.Process;
 import android.os.SystemClock;
 import android.util.Range;
 import android.view.Choreographer;
+import android.view.PixelCopy;
+import android.view.Surface;
 import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 
 public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements Choreographer.FrameCallback {
 
@@ -54,7 +62,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private final ArrayList<byte[]> ppsBuffers = new ArrayList<>();
     private boolean submittedCsd;
     private byte[] currentHdrMetadata;
-
+    private Listener graphicsListener;
     private int nextInputBufferIndex = -1;
     private ByteBuffer nextInputBuffer;
 
@@ -102,7 +110,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
     private boolean needsBaselineSpsHack;
     private SeqParameterSet savedSps;
-
+    private SurfaceTexture surfaceTexture;
     private RendererException initialException;
     private long initialExceptionTimestamp;
     private static final int EXCEPTION_REPORT_DELAY_MS = 3000;
@@ -115,7 +123,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private int lastFrameNumber;
     private int refreshRate;
     private PreferenceConfiguration prefs;
-
+    private Surface surface;
     private LinkedBlockingQueue<Integer> outputBufferQueue = new LinkedBlockingQueue<>();
     private static final int OUTPUT_BUFFER_QUEUE_LIMIT = 2;
     private long lastRenderedFrameTimeNanos;
@@ -288,6 +296,10 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         }
 
         return decoderInfo;
+    }
+
+    public void setGraphicsListener(MediaCodecDecoderRenderer.Listener listener) {
+        this.graphicsListener = listener;
     }
 
     public void setRenderTarget(SurfaceHolder renderTarget) {
@@ -471,6 +483,13 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             videoFormat.setInteger(MediaFormat.KEY_FRAME_RATE, refreshRate);
         }
 
+
+        // 通过SurfaceTexture创建Surface A
+        surfaceTexture = new SurfaceTexture(0);
+        surface = new Surface(surfaceTexture);
+        surface.setFrameRate(90, Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE);
+
+
         // Adaptive playback can also be enabled by the whitelist on pre-KitKat devices
         // so we don't fill these pre-KitKat
         if (adaptivePlayback && Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
@@ -538,7 +557,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         LimeLog.info("Configuring with format: "+format);
 
-        videoDecoder.configure(format, renderTarget.getSurface(), null, 0);
+        videoDecoder.configure(format, surface, null, 0);
 
         configuredFormat = format;
 
@@ -1089,6 +1108,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                         // Use a PTS that will cause this frame to be dropped if another comes in within
                                         // the same V-sync period
                                         videoDecoder.releaseOutputBuffer(lastIndex, System.nanoTime());
+                                        graphicsListener.onGraphicsUpdate(surface, 0, 0, 1920, 1080);
                                     }
                                     else {
                                         videoDecoder.releaseOutputBuffer(lastIndex, true);
@@ -1231,7 +1251,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     @Override
     public void start() {
         startRendererThread();
-        startChoreographerThread();
+//        startChoreographerThread();
     }
 
     // !!! May be called even if setup()/start() fails !!!
@@ -1969,5 +1989,9 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
             return str;
         }
+    }
+
+    public interface Listener {
+        void onGraphicsUpdate(Surface surface, int x, int y, int width, int height);
     }
 }
