@@ -125,7 +125,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private PreferenceConfiguration prefs;
     private Surface surface;
     private LinkedBlockingQueue<Integer> outputBufferQueue = new LinkedBlockingQueue<>();
-    private static final int OUTPUT_BUFFER_QUEUE_LIMIT = 2;
+    private static final int OUTPUT_BUFFER_QUEUE_LIMIT = 8;
     private long lastRenderedFrameTimeNanos;
     private HandlerThread choreographerHandlerThread;
     private Handler choreographerHandler;
@@ -1040,6 +1040,8 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         // be required even if the codec died before giving any output.
         doCodecRecoveryIfRequired(CR_FLAG_CHOREOGRAPHER);
 
+        graphicsListener.onGraphicsUpdate(surface, 0, 0, prefs.width, prefs.height);
+
         // Request another callback for next frame
         Choreographer.getInstance().postFrameCallback(this);
     }
@@ -1139,8 +1141,6 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                 // Add this buffer
                                 outputBufferQueue.add(lastIndex);
                             }
-
-                            graphicsListener.onGraphicsUpdate(surface, 0, 0, prefs.width, prefs.height);
 
                             // Add delta time to the totals (excluding probable outliers)
                             long delta = SystemClock.uptimeMillis() - (presentationTimeUs / 1000);
@@ -1253,7 +1253,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     @Override
     public void start() {
         startRendererThread();
-//        startChoreographerThread();
+        startChoreographerThread();
     }
 
     // !!! May be called even if setup()/start() fails !!!
