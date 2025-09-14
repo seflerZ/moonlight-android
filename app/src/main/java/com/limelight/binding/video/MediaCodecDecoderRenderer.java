@@ -1112,7 +1112,6 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 //                                    }
 //                                    else {
                                         videoDecoder.releaseOutputBuffer(lastIndex, true);
-                                        graphicsListener.onGraphicsUpdate(surface, 0, 0, prefs.width, prefs.height);
 //                                    }
                                 }
 
@@ -1140,6 +1139,8 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                 // Add this buffer
                                 outputBufferQueue.add(lastIndex);
                             }
+
+                            graphicsListener.onGraphicsUpdate(surface, 0, 0, prefs.width, prefs.height);
 
                             // Add delta time to the totals (excluding probable outliers)
                             long delta = SystemClock.uptimeMillis() - (presentationTimeUs / 1000);
