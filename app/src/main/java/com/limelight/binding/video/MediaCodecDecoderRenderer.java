@@ -125,7 +125,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private PreferenceConfiguration prefs;
     private Surface surface;
     private LinkedBlockingQueue<Integer> outputBufferQueue = new LinkedBlockingQueue<>();
-    private static final int OUTPUT_BUFFER_QUEUE_LIMIT = 10;
+    private static final int OUTPUT_BUFFER_QUEUE_LIMIT = 4;
     private long lastRenderedFrameTimeNanos;
     private HandlerThread choreographerHandlerThread;
     private Handler choreographerHandler;
@@ -1116,6 +1116,8 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                         videoDecoder.releaseOutputBuffer(lastIndex, true);
 //                                    }
                                 }
+
+                                graphicsListener.onGraphicsUpdate(surface, 0, 0, prefs.width, prefs.height);
 
                                 activeWindowVideoStats.totalFramesRendered++;
                             }
