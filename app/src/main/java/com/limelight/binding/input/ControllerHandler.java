@@ -209,7 +209,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         initialControllers = getAttachedControllerMask(activityContext);
 
         // Register ourselves for input device notifications
-        inputManager.registerInputDeviceListener(this, null);
+        inputManager.registerInputDeviceListener(this, mainThreadHandler);
     }
 
     private static InputDevice.MotionRange getMotionRangeForJoystickAxis(InputDevice dev, int axis) {

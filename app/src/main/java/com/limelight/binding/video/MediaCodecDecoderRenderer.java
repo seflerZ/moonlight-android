@@ -125,7 +125,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private PreferenceConfiguration prefs;
     private Surface surface;
     private LinkedBlockingQueue<Integer> outputBufferQueue = new LinkedBlockingQueue<>();
-    private static final int OUTPUT_BUFFER_QUEUE_LIMIT = 4;
+    private static final int OUTPUT_BUFFER_QUEUE_LIMIT = 6;
     private long lastRenderedFrameTimeNanos;
     private HandlerThread choreographerHandlerThread;
     private Handler choreographerHandler;
