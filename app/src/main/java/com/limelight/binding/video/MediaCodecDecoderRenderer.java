@@ -125,7 +125,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private PreferenceConfiguration prefs;
     private Surface surface;
     private LinkedBlockingQueue<Integer> outputBufferQueue = new LinkedBlockingQueue<>();
-    private static final int OUTPUT_BUFFER_QUEUE_LIMIT = 5;
+    private static final int OUTPUT_BUFFER_QUEUE_LIMIT = 6;
     private long lastRenderedFrameTimeNanos;
     private HandlerThread choreographerHandlerThread;
     private Handler choreographerHandler;
@@ -1008,6 +1008,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         long actualFrameTimeDeltaNs = frameTimeNanos - lastRenderedFrameTimeNanos;
         long expectedFrameTimeDeltaNs = 800000000 / refreshRate; // within 80% of the next frame
         if (actualFrameTimeDeltaNs >= expectedFrameTimeDeltaNs) {
+            graphicsListener.onGraphicsUpdate(surface, 0, 0, prefs.width, prefs.height);
             // Render up to one frame when in frame pacing mode.
             //
             // NB: Since the queue limit is 2, we won't starve the decoder of output buffers
@@ -1041,8 +1042,6 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         // Attempt codec recovery even if we have nothing to render right now. Recovery can still
         // be required even if the codec died before giving any output.
         doCodecRecoveryIfRequired(CR_FLAG_CHOREOGRAPHER);
-
-        graphicsListener.onGraphicsUpdate(surface, 0, 0, prefs.width, prefs.height);
 
         // Request another callback for next frame
         Choreographer.getInstance().postFrameCallback(this);
