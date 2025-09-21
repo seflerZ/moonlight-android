@@ -125,7 +125,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private PreferenceConfiguration prefs;
     private Surface surface;
     private LinkedBlockingQueue<Integer> outputBufferQueue = new LinkedBlockingQueue<>();
-    private static final int OUTPUT_BUFFER_QUEUE_LIMIT = 6;
+    private static final int OUTPUT_BUFFER_QUEUE_LIMIT = 5;
     private long lastRenderedFrameTimeNanos;
     private HandlerThread choreographerHandlerThread;
     private Handler choreographerHandler;
@@ -487,7 +487,9 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         // 通过SurfaceTexture创建Surface A
         surfaceTexture = new SurfaceTexture(0);
         surface = new Surface(surfaceTexture);
-        surface.setFrameRate(90, Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            surface.setFrameRate(90, Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE);
+        }
 
 
         // Adaptive playback can also be enabled by the whitelist on pre-KitKat devices
