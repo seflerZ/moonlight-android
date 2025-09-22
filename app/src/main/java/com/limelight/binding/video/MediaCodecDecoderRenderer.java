@@ -1007,7 +1007,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         // at a frame rate that doesn't match the display (such as 60 FPS on 120 Hz).
         long actualFrameTimeDeltaNs = frameTimeNanos - lastRenderedFrameTimeNanos;
         long expectedFrameTimeDeltaNs = 800000000 / refreshRate; // within 80% of the next frame
-        if (actualFrameTimeDeltaNs >= expectedFrameTimeDeltaNs) {
+//        if (actualFrameTimeDeltaNs >= expectedFrameTimeDeltaNs) {
             graphicsListener.onGraphicsUpdate(surface, 0, 0, prefs.width, prefs.height);
             // Render up to one frame when in frame pacing mode.
             //
@@ -1032,12 +1032,12 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                         videoDecoder.releaseOutputBuffer(nextOutputBuffer, false);
                     } catch (IllegalStateException e) {
                         // This will leak nextOutputBuffer, but there's really nothing else we can do
-                        e.printStackTrace();
+//                        e.printStackTrace();
                         handleDecoderException(e);
                     }
                 }
             }
-        }
+//        }
 
         // Attempt codec recovery even if we have nothing to render right now. Recovery can still
         // be required even if the codec died before giving any output.
@@ -1131,7 +1131,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                 // NB: We have to do this on the producer side because the consumer may not
                                 // run for a while (if there is a huge mismatch between stream FPS and display
                                 // refresh rate).
-                                if (outputBufferQueue.size() == OUTPUT_BUFFER_QUEUE_LIMIT) {
+                                if (outputBufferQueue.size() >= OUTPUT_BUFFER_QUEUE_LIMIT) {
                                     try {
                                         videoDecoder.releaseOutputBuffer(outputBufferQueue.take(), false);
                                     } catch (InterruptedException e) {
