@@ -1086,40 +1086,21 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                             // Render the latest frame now if frame pacing isn't in balanced mode
                             if (prefs.framePacing != PreferenceConfiguration.FRAME_PACING_BALANCED) {
                                 // Get the last output buffer in the queue
-                                while ((outIndex = videoDecoder.dequeueOutputBuffer(info, 0)) >= 0) {
-                                    videoDecoder.releaseOutputBuffer(lastIndex, false);
-
-                                    numFramesOut++;
-
-                                    lastIndex = outIndex;
-                                    presentationTimeUs = info.presentationTimeUs;
-                                }
-
-                                if (prefs.framePacing == PreferenceConfiguration.FRAME_PACING_MAX_SMOOTHNESS ||
-                                        prefs.framePacing == PreferenceConfiguration.FRAME_PACING_CAP_FPS) {
-                                    // In max smoothness or cap FPS mode, we want to never drop frames
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                                        // Use a PTS that will cause this frame to never be dropped
-                                        videoDecoder.releaseOutputBuffer(lastIndex, 0);
-                                    }
-                                    else {
-                                        videoDecoder.releaseOutputBuffer(lastIndex, true);
-                                    }
-                                }
-                                else {
-//                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-//                                        // Use a PTS that will cause this frame to be dropped if another comes in within
-//                                        // the same V-sync period
-//                                        videoDecoder.releaseOutputBuffer(lastIndex, System.nanoTime());
+//                                while ((outIndex = videoDecoder.dequeueOutputBuffer(info, 0)) >= 0) {
+//                                    videoDecoder.releaseOutputBuffer(lastIndex, 0);
 //
-//                                    }
-//                                    else {
-                                        videoDecoder.releaseOutputBuffer(lastIndex, true);
-//                                    }
-                                }
+//                                    numFramesOut++;
+//
+//                                    lastIndex = outIndex;
+//                                    presentationTimeUs = info.presentationTimeUs;
+//
+//                                    graphicsListener.onGraphicsUpdate(surface, 0, 0, prefs.width, prefs.height);
+//
+//                                    activeWindowVideoStats.totalFramesRendered++;
+//                                }
 
+                                videoDecoder.releaseOutputBuffer(lastIndex, true);
                                 graphicsListener.onGraphicsUpdate(surface, 0, 0, prefs.width, prefs.height);
-
                                 activeWindowVideoStats.totalFramesRendered++;
                             }
                             else {
