@@ -1086,18 +1086,16 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                             // Render the latest frame now if frame pacing isn't in balanced mode
                             if (prefs.framePacing != PreferenceConfiguration.FRAME_PACING_BALANCED) {
                                 // Get the last output buffer in the queue
-//                                while ((outIndex = videoDecoder.dequeueOutputBuffer(info, 0)) >= 0) {
-//                                    videoDecoder.releaseOutputBuffer(lastIndex, 0);
-//
-//                                    numFramesOut++;
-//
-//                                    lastIndex = outIndex;
-//                                    presentationTimeUs = info.presentationTimeUs;
-//
-//                                    graphicsListener.onGraphicsUpdate(surface, 0, 0, prefs.width, prefs.height);
-//
-//                                    activeWindowVideoStats.totalFramesRendered++;
-//                                }
+                                while ((outIndex = videoDecoder.dequeueOutputBuffer(info, 0)) >= 0) {
+                                    videoDecoder.releaseOutputBuffer(lastIndex, 0);
+
+                                    numFramesOut++;
+
+                                    lastIndex = outIndex;
+                                    presentationTimeUs = info.presentationTimeUs;
+
+                                    activeWindowVideoStats.totalFramesRendered++;
+                                }
 
                                 videoDecoder.releaseOutputBuffer(lastIndex, true);
                                 graphicsListener.onGraphicsUpdate(surface, 0, 0, prefs.width, prefs.height);
