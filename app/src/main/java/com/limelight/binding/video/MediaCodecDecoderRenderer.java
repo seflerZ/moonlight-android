@@ -1006,8 +1006,8 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         // Don't render unless a new frame is due. This prevents microstutter when streaming
         // at a frame rate that doesn't match the display (such as 60 FPS on 120 Hz).
         long actualFrameTimeDeltaNs = frameTimeNanos - lastRenderedFrameTimeNanos;
-        long expectedFrameTimeDeltaNs = 800000000 / refreshRate; // within 80% of the next frame
-//        if (actualFrameTimeDeltaNs >= expectedFrameTimeDeltaNs) {
+        long expectedFrameTimeDeltaNs = 850000000 / refreshRate; // within 85% of the next frame
+        if (actualFrameTimeDeltaNs >= expectedFrameTimeDeltaNs) {
             graphicsListener.onGraphicsUpdate(surface, 0, 0, prefs.width, prefs.height);
             // Render up to one frame when in frame pacing mode.
             //
@@ -1037,7 +1037,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                     }
                 }
             }
-//        }
+        }
 
         // Attempt codec recovery even if we have nothing to render right now. Recovery can still
         // be required even if the codec died before giving any output.
@@ -1086,18 +1086,18 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                             // Render the latest frame now if frame pacing isn't in balanced mode
                             if (prefs.framePacing != PreferenceConfiguration.FRAME_PACING_BALANCED) {
                                 // Get the last output buffer in the queue
-                                while ((outIndex = videoDecoder.dequeueOutputBuffer(info, 0)) >= 0) {
-                                    videoDecoder.releaseOutputBuffer(lastIndex, 0);
+//                                while ((outIndex = videoDecoder.dequeueOutputBuffer(info, 0)) >= 0) {
+//                                    videoDecoder.releaseOutputBuffer(lastIndex, 0);
+//
+//                                    numFramesOut++;
+//
+//                                    lastIndex = outIndex;
+//                                    presentationTimeUs = info.presentationTimeUs;
+//
+//                                    activeWindowVideoStats.totalFramesRendered++;
+//                                }
 
-                                    numFramesOut++;
-
-                                    lastIndex = outIndex;
-                                    presentationTimeUs = info.presentationTimeUs;
-
-                                    activeWindowVideoStats.totalFramesRendered++;
-                                }
-
-                                videoDecoder.releaseOutputBuffer(lastIndex, true);
+                                videoDecoder.releaseOutputBuffer(lastIndex, System.nanoTime());
                                 graphicsListener.onGraphicsUpdate(surface, 0, 0, prefs.width, prefs.height);
                                 activeWindowVideoStats.totalFramesRendered++;
                             }
