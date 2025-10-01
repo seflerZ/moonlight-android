@@ -268,9 +268,9 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
     private MediaCodecInfo findAv1Decoder(PreferenceConfiguration prefs) {
         // For now, don't use AV1 unless explicitly requested
-        if (prefs.videoFormat != PreferenceConfiguration.FormatOption.FORCE_AV1) {
-            return null;
-        }
+//        if (prefs.videoFormat != PreferenceConfiguration.FormatOption.FORCE_AV1) {
+//            return null;
+//        }
 
         MediaCodecInfo decoderInfo = MediaCodecHelper.findProbableSafeDecoder("video/av01", -1);
         if (decoderInfo != null) {

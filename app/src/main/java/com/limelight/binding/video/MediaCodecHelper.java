@@ -776,25 +776,17 @@ public class MediaCodecHelper {
             return false;
         }
 
-        // TODO: Test some AV1 decoders
-        return false;
+        return true;
     }
 
     @SuppressWarnings("deprecation")
     @SuppressLint("NewApi")
     private static LinkedList<MediaCodecInfo> getMediaCodecList() {
         LinkedList<MediaCodecInfo> infoList = new LinkedList<>();
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            MediaCodecList mcl = new MediaCodecList(MediaCodecList.REGULAR_CODECS);
-            Collections.addAll(infoList, mcl.getCodecInfos());
-        }
-        else {
-            for (int i = 0; i < MediaCodecList.getCodecCount(); i++) {
-                infoList.add(MediaCodecList.getCodecInfoAt(i));
-            }   
-        }
-        
+
+        MediaCodecList mcl = new MediaCodecList(MediaCodecList.REGULAR_CODECS);
+        Collections.addAll(infoList, mcl.getCodecInfos());
+
         return infoList;
     }
     
