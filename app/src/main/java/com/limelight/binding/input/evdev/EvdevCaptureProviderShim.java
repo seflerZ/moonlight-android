@@ -3,12 +3,11 @@ package com.limelight.binding.input.evdev;
 
 import android.app.Activity;
 
-import com.limelight.BuildConfig;
 import com.limelight.binding.input.capture.InputCaptureProvider;
 
 public class EvdevCaptureProviderShim {
     public static boolean isCaptureProviderSupported() {
-        return BuildConfig.ROOT_BUILD;
+        return false;
     }
 
     // We need to construct our capture provider using reflection because it isn't included in non-root builds
