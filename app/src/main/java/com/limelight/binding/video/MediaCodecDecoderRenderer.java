@@ -125,7 +125,6 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private PreferenceConfiguration prefs;
     private Surface surface;
     private LinkedBlockingQueue<Integer> outputBufferQueue = new LinkedBlockingQueue<>();
-    private static final int OUTPUT_BUFFER_QUEUE_LIMIT = 6;
     private long lastRenderedFrameTimeNanos;
     private HandlerThread choreographerHandlerThread;
     private Handler choreographerHandler;
@@ -144,7 +143,6 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         return decoder;
     }
 
-    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
     private boolean decoderCanMeetPerformancePoint(MediaCodecInfo.VideoCapabilities caps, PreferenceConfiguration prefs) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             MediaCodecInfo.VideoCapabilities.PerformancePoint targetPerfPoint = new MediaCodecInfo.VideoCapabilities.PerformancePoint(prefs.width, prefs.height, prefs.fps);
@@ -315,6 +313,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         this.context = activity;
         this.activity = activity;
         this.prefs = prefs;
+        this.refreshRate = prefs.fps;
         this.crashListener = crashListener;
         this.consecutiveCrashCount = consecutiveCrashCount;
         this.glRenderer = glRenderer;
@@ -479,9 +478,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         MediaFormat videoFormat = MediaFormat.createVideoFormat(mimeType, initialWidth, initialHeight);
 
         // Avoid setting KEY_FRAME_RATE on Lollipop and earlier to reduce compatibility risk
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            videoFormat.setInteger(MediaFormat.KEY_FRAME_RATE, refreshRate);
-        }
+        videoFormat.setInteger(MediaFormat.KEY_FRAME_RATE, refreshRate);
 
 
         // 通过SurfaceTexture创建Surface A
@@ -999,14 +996,12 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             return;
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            frameTimeNanos -= activity.getWindowManager().getDefaultDisplay().getAppVsyncOffsetNanos();
-        }
+        frameTimeNanos -= activity.getWindowManager().getDefaultDisplay().getAppVsyncOffsetNanos();
 
         // Don't render unless a new frame is due. This prevents microstutter when streaming
         // at a frame rate that doesn't match the display (such as 60 FPS on 120 Hz).
         long actualFrameTimeDeltaNs = frameTimeNanos - lastRenderedFrameTimeNanos;
-        long expectedFrameTimeDeltaNs = 850000000 / refreshRate; // within 85% of the next frame
+        long expectedFrameTimeDeltaNs = 900000000 / refreshRate; // within 90% of the next frame
         if (actualFrameTimeDeltaNs >= expectedFrameTimeDeltaNs) {
             graphicsListener.onGraphicsUpdate(surface, 0, 0, prefs.width, prefs.height);
             // Render up to one frame when in frame pacing mode.
@@ -1017,12 +1012,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             Integer nextOutputBuffer = outputBufferQueue.poll();
             if (nextOutputBuffer != null) {
                 try {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                        videoDecoder.releaseOutputBuffer(nextOutputBuffer, frameTimeNanos);
-                    }
-                    else {
-                        videoDecoder.releaseOutputBuffer(nextOutputBuffer, true);
-                    }
+                    videoDecoder.releaseOutputBuffer(nextOutputBuffer, frameTimeNanos);
 
                     lastRenderedFrameTimeNanos = frameTimeNanos;
                     activeWindowVideoStats.totalFramesRendered++;
@@ -1059,12 +1049,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         // Start the frame callbacks
         choreographerHandler = new Handler(choreographerHandlerThread.getLooper());
-        choreographerHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                Choreographer.getInstance().postFrameCallback(MediaCodecDecoderRenderer.this);
-            }
-        });
+        choreographerHandler.post(() -> Choreographer.getInstance().postFrameCallback(MediaCodecDecoderRenderer.this));
     }
 
     private void startRendererThread()
@@ -1086,16 +1071,16 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                             // Render the latest frame now if frame pacing isn't in balanced mode
                             if (prefs.framePacing != PreferenceConfiguration.FRAME_PACING_BALANCED) {
                                 // Get the last output buffer in the queue
-//                                while ((outIndex = videoDecoder.dequeueOutputBuffer(info, 0)) >= 0) {
-//                                    videoDecoder.releaseOutputBuffer(lastIndex, 0);
-//
-//                                    numFramesOut++;
-//
-//                                    lastIndex = outIndex;
-//                                    presentationTimeUs = info.presentationTimeUs;
-//
-//                                    activeWindowVideoStats.totalFramesRendered++;
-//                                }
+                                while ((outIndex = videoDecoder.dequeueOutputBuffer(info, 0)) >= 0) {
+                                    videoDecoder.releaseOutputBuffer(lastIndex, 0);
+
+                                    numFramesOut++;
+
+                                    lastIndex = outIndex;
+                                    presentationTimeUs = info.presentationTimeUs;
+
+                                    activeWindowVideoStats.totalFramesRendered++;
+                                }
 
                                 videoDecoder.releaseOutputBuffer(lastIndex, System.nanoTime());
                                 graphicsListener.onGraphicsUpdate(surface, 0, 0, prefs.width, prefs.height);
@@ -1110,7 +1095,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                 // NB: We have to do this on the producer side because the consumer may not
                                 // run for a while (if there is a huge mismatch between stream FPS and display
                                 // refresh rate).
-                                if (outputBufferQueue.size() >= OUTPUT_BUFFER_QUEUE_LIMIT) {
+                                if (outputBufferQueue.size() >= prefs.incomingFrameQueueSize) {
                                     try {
                                         videoDecoder.releaseOutputBuffer(outputBufferQueue.take(), false);
                                     } catch (InterruptedException e) {
