@@ -445,12 +445,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         // an HEVC decoder, we will use Rec 709 (even for H.264) since we can't choose a
         // colorspace by codec (and it's probably safe to say a SoC with HEVC decoding is
         // plenty modern enough to handle H.264 VUI colorspace info).
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O || hevcDecoder != null || av1Decoder != null) {
-            return MoonBridge.COLORSPACE_REC_709;
-        }
-        else {
-            return MoonBridge.COLORSPACE_REC_601;
-        }
+        return MoonBridge.COLORSPACE_REC_709;
     }
 
     public int getPreferredColorRange() {
@@ -1503,18 +1498,6 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                     sps.numRefFrames = 1;
                 }
 
-                // GFE 2.5.11 changed the SPS to add additional extensions. Some devices don't like these
-                // so we remove them here on old devices unless these devices also support HEVC.
-                // See getPreferredColorSpace() for further information.
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O &&
-                        sps.vuiParams != null &&
-                        hevcDecoder == null &&
-                        av1Decoder == null) {
-                    sps.vuiParams.videoSignalTypePresentFlag = false;
-                    sps.vuiParams.colourDescriptionPresentFlag = false;
-                    sps.vuiParams.chromaLocInfoPresentFlag = false;
-                }
-
                 // Some older devices used to choke on a bitstream restrictions, so we won't provide them
                 // unless explicitly whitelisted. For newer devices, leave the bitstream restrictions present.
                 // The SPS that comes in the current H264 byte stream doesn't set bitstream_restriction_flag
@@ -1845,16 +1828,14 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             str += "AVC Decoder: "+((renderer.avcDecoder != null) ? renderer.avcDecoder.getName():"(none)")+DELIMITER;
             str += "HEVC Decoder: "+((renderer.hevcDecoder != null) ? renderer.hevcDecoder.getName():"(none)")+DELIMITER;
             str += "AV1 Decoder: "+((renderer.av1Decoder != null) ? renderer.av1Decoder.getName():"(none)")+DELIMITER;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && renderer.avcDecoder != null) {
+            if (renderer.avcDecoder != null) {
                 Range<Integer> avcWidthRange = renderer.avcDecoder.getCapabilitiesForType("video/avc").getVideoCapabilities().getSupportedWidths();
                 str += "AVC supported width range: "+avcWidthRange+DELIMITER;
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    try {
-                        Range<Double> avcFpsRange = renderer.avcDecoder.getCapabilitiesForType("video/avc").getVideoCapabilities().getAchievableFrameRatesFor(renderer.initialWidth, renderer.initialHeight);
-                        str += "AVC achievable FPS range: "+avcFpsRange+DELIMITER;
-                    } catch (IllegalArgumentException e) {
-                        str += "AVC achievable FPS range: UNSUPPORTED!"+DELIMITER;
-                    }
+                try {
+                    Range<Double> avcFpsRange = renderer.avcDecoder.getCapabilitiesForType("video/avc").getVideoCapabilities().getAchievableFrameRatesFor(renderer.initialWidth, renderer.initialHeight);
+                    str += "AVC achievable FPS range: " + avcFpsRange + DELIMITER;
+                } catch (IllegalArgumentException e) {
+                    str += "AVC achievable FPS range: UNSUPPORTED!" + DELIMITER;
                 }
             }
             if (renderer.hevcDecoder != null) {
