@@ -290,10 +290,15 @@ public class ComputerManagerService extends Service {
             return null;
         }
 
-        public ComputerDetails getComputerByAddress(String address) {
+        public ComputerDetails getComputerByManualAddress(String address) {
             synchronized (pollingTuples) {
                 for (PollingTuple tuple : pollingTuples) {
-                    if (address.equals(tuple.computer.manualAddress.toString())) {
+                    ComputerDetails.AddressTuple manualAddress = tuple.computer.manualAddress;
+                    if (manualAddress == null) {
+                        continue;
+                    }
+
+                    if (address.equals(manualAddress.toString())) {
                         return tuple.computer;
                     }
                 }
