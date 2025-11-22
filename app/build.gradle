@@ -12,8 +12,6 @@ android {
         minSdkVersion minApi
         targetSdkVersion targetApi
 
-        versionName "12.1"
-        versionCode = 314
 
         // Generate native debug symbols to allow Google Play to symbolicate our native crashes
         ndk.debugSymbolLevel = 'FULL'
@@ -41,7 +39,6 @@ android {
 
             buildConfigField "boolean", "ROOT_BUILD", "false"
 
-            debuggable true
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
         release {
