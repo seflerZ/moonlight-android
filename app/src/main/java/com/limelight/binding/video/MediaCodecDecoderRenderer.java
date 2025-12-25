@@ -47,7 +47,7 @@ import android.view.SurfaceView;
 
 public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements Choreographer.FrameCallback {
 
-    private static final boolean USE_FRAME_RENDER_TIME = false;
+    private static final boolean USE_FRAME_RENDER_TIME = true;
     private static final boolean FRAME_RENDER_TIME_ONLY = USE_FRAME_RENDER_TIME && false;
 
     // Used on versions < 5.0
@@ -162,20 +162,18 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             // Fall-through to try the Android M API if there's no performance point data
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            try {
-                // We'll ask the decoder what it can do for us at this resolution and see if our
-                // requested frame rate falls below or inside the range of achievable frame rates.
-                Range<Double> fpsRange = caps.getAchievableFrameRatesFor(prefs.width, prefs.height);
-                if (fpsRange != null) {
-                    return prefs.fps <= fpsRange.getUpper();
-                }
-
-                // Fall-through to try the Android L API if there's no performance point data
-            } catch (IllegalArgumentException e) {
-                // Video size not supported at any frame rate
-                return false;
+        try {
+            // We'll ask the decoder what it can do for us at this resolution and see if our
+            // requested frame rate falls below or inside the range of achievable frame rates.
+            Range<Double> fpsRange = caps.getAchievableFrameRatesFor(prefs.width, prefs.height);
+            if (fpsRange != null) {
+                return prefs.fps <= fpsRange.getUpper();
             }
+
+            // Fall-through to try the Android L API if there's no performance point data
+        } catch (IllegalArgumentException e) {
+            // Video size not supported at any frame rate
+            return false;
         }
 
         // As a last resort, we will use areSizeAndRateSupported() which is explicitly NOT a
@@ -185,42 +183,24 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     }
 
     private boolean decoderCanMeetPerformancePointWithHevcAndNotAvc(MediaCodecInfo hevcDecoderInfo, MediaCodecInfo avcDecoderInfo, PreferenceConfiguration prefs) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            MediaCodecInfo.VideoCapabilities avcCaps = avcDecoderInfo.getCapabilitiesForType("video/avc").getVideoCapabilities();
-            MediaCodecInfo.VideoCapabilities hevcCaps = hevcDecoderInfo.getCapabilitiesForType("video/hevc").getVideoCapabilities();
+        MediaCodecInfo.VideoCapabilities avcCaps = avcDecoderInfo.getCapabilitiesForType("video/avc").getVideoCapabilities();
+        MediaCodecInfo.VideoCapabilities hevcCaps = hevcDecoderInfo.getCapabilitiesForType("video/hevc").getVideoCapabilities();
 
-            return !decoderCanMeetPerformancePoint(avcCaps, prefs) && decoderCanMeetPerformancePoint(hevcCaps, prefs);
-        }
-        else {
-            // No performance data
-            return false;
-        }
+        return !decoderCanMeetPerformancePoint(avcCaps, prefs) && decoderCanMeetPerformancePoint(hevcCaps, prefs);
     }
 
     private boolean decoderCanMeetPerformancePointWithAv1AndNotHevc(MediaCodecInfo av1DecoderInfo, MediaCodecInfo hevcDecoderInfo, PreferenceConfiguration prefs) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            MediaCodecInfo.VideoCapabilities av1Caps = av1DecoderInfo.getCapabilitiesForType("video/av01").getVideoCapabilities();
-            MediaCodecInfo.VideoCapabilities hevcCaps = hevcDecoderInfo.getCapabilitiesForType("video/hevc").getVideoCapabilities();
+        MediaCodecInfo.VideoCapabilities av1Caps = av1DecoderInfo.getCapabilitiesForType("video/av01").getVideoCapabilities();
+        MediaCodecInfo.VideoCapabilities hevcCaps = hevcDecoderInfo.getCapabilitiesForType("video/hevc").getVideoCapabilities();
 
-            return !decoderCanMeetPerformancePoint(hevcCaps, prefs) && decoderCanMeetPerformancePoint(av1Caps, prefs);
-        }
-        else {
-            // No performance data
-            return false;
-        }
+        return !decoderCanMeetPerformancePoint(hevcCaps, prefs) && decoderCanMeetPerformancePoint(av1Caps, prefs);
     }
 
     private boolean decoderCanMeetPerformancePointWithAv1AndNotAvc(MediaCodecInfo av1DecoderInfo, MediaCodecInfo avcDecoderInfo, PreferenceConfiguration prefs) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            MediaCodecInfo.VideoCapabilities avcCaps = avcDecoderInfo.getCapabilitiesForType("video/avc").getVideoCapabilities();
-            MediaCodecInfo.VideoCapabilities av1Caps = av1DecoderInfo.getCapabilitiesForType("video/av01").getVideoCapabilities();
+        MediaCodecInfo.VideoCapabilities avcCaps = avcDecoderInfo.getCapabilitiesForType("video/avc").getVideoCapabilities();
+        MediaCodecInfo.VideoCapabilities av1Caps = av1DecoderInfo.getCapabilitiesForType("video/av01").getVideoCapabilities();
 
-            return !decoderCanMeetPerformancePoint(avcCaps, prefs) && decoderCanMeetPerformancePoint(av1Caps, prefs);
-        }
-        else {
-            // No performance data
-            return false;
-        }
+        return !decoderCanMeetPerformancePoint(avcCaps, prefs) && decoderCanMeetPerformancePoint(av1Caps, prefs);
     }
 
     private MediaCodecInfo findHevcDecoder(PreferenceConfiguration prefs, boolean meteredNetwork, boolean requestedHdr) {
@@ -519,33 +499,35 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
     private void configureAndStartDecoder(MediaFormat format) {
         // Set HDR metadata if present
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            if (currentHdrMetadata != null) {
-                ByteBuffer hdrStaticInfo = ByteBuffer.allocate(25).order(ByteOrder.LITTLE_ENDIAN);
-                ByteBuffer hdrMetadata = ByteBuffer.wrap(currentHdrMetadata).order(ByteOrder.LITTLE_ENDIAN);
+        if (currentHdrMetadata != null) {
+            ByteBuffer hdrStaticInfo = ByteBuffer.allocate(25).order(ByteOrder.LITTLE_ENDIAN);
+            ByteBuffer hdrMetadata = ByteBuffer.wrap(currentHdrMetadata).order(ByteOrder.LITTLE_ENDIAN);
 
-                // Create a HDMI Dynamic Range and Mastering InfoFrame as defined by CTA-861.3
-                hdrStaticInfo.put((byte) 0); // Metadata type
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // RX
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // RY
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // GX
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // GY
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // BX
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // BY
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // White X
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // White Y
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // Max mastering luminance
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // Min mastering luminance
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // Max content luminance
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // Max frame average luminance
+            // Create a HDMI Dynamic Range and Mastering InfoFrame as defined by CTA-861.3
+            hdrStaticInfo.put((byte) 0); // Metadata type
+            hdrStaticInfo.putShort(hdrMetadata.getShort()); // RX
+            hdrStaticInfo.putShort(hdrMetadata.getShort()); // RY
+            hdrStaticInfo.putShort(hdrMetadata.getShort()); // GX
+            hdrStaticInfo.putShort(hdrMetadata.getShort()); // GY
+            hdrStaticInfo.putShort(hdrMetadata.getShort()); // BX
+            hdrStaticInfo.putShort(hdrMetadata.getShort()); // BY
+            hdrStaticInfo.putShort(hdrMetadata.getShort()); // White X
+            hdrStaticInfo.putShort(hdrMetadata.getShort()); // White Y
+            hdrStaticInfo.putShort(hdrMetadata.getShort()); // Max mastering luminance
+            hdrStaticInfo.putShort(hdrMetadata.getShort()); // Min mastering luminance
+            hdrStaticInfo.putShort(hdrMetadata.getShort()); // Max content luminance
+            hdrStaticInfo.putShort(hdrMetadata.getShort()); // Max frame average luminance
 
-                hdrStaticInfo.rewind();
-                format.setByteBuffer(MediaFormat.KEY_HDR_STATIC_INFO, hdrStaticInfo);
-            }
-            else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                format.removeKey(MediaFormat.KEY_HDR_STATIC_INFO);
-            }
+            hdrStaticInfo.rewind();
+            format.setByteBuffer(MediaFormat.KEY_HDR_STATIC_INFO, hdrStaticInfo);
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            format.removeKey(MediaFormat.KEY_HDR_STATIC_INFO);
         }
+
+        format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
+        format.setInteger(MediaFormat.KEY_LATENCY, 1); // 启用低延迟模式（高通专有）
+        // 或者使用官方常量（Android 10+）
+        format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1);
 
         LimeLog.info("Configuring with format: "+format);
 
@@ -559,20 +541,14 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         spsBuffers.clear();
         ppsBuffers.clear();
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            // This will contain the actual accepted input format attributes
-            inputFormat = videoDecoder.getInputFormat();
-            LimeLog.info("Input format: "+inputFormat);
-        }
+        // This will contain the actual accepted input format attributes
+        inputFormat = videoDecoder.getInputFormat();
+        LimeLog.info("Input format: "+inputFormat);
 
         videoDecoder.setVideoScalingMode(MediaCodec.VIDEO_SCALING_MODE_SCALE_TO_FIT);
 
         // Start the decoder
         videoDecoder.start();
-
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-            legacyInputBuffers = videoDecoder.getInputBuffers();
-        }
     }
 
     private boolean tryConfigureDecoder(MediaCodecInfo selectedDecoderInfo, MediaFormat format, boolean throwOnCodecError) {
@@ -582,18 +558,13 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             configureAndStartDecoder(format);
             LimeLog.info("Using codec " + selectedDecoderInfo.getName() + " for hardware decoding " + format.getString(MediaFormat.KEY_MIME));
             configured = true;
-        } catch (IllegalArgumentException e) {
-            e.printStackTrace();
-            if (throwOnCodecError) {
-                throw e;
-            }
-        } catch (IllegalStateException e) {
-            e.printStackTrace();
+        } catch (IllegalArgumentException | IllegalStateException e) {
+//            e.printStackTrace();
             if (throwOnCodecError) {
                 throw e;
             }
         } catch (IOException e) {
-            e.printStackTrace();
+//            e.printStackTrace();
             if (throwOnCodecError) {
                 throw new RuntimeException(e);
             }
@@ -695,15 +666,15 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             }
         }
 
-        if (USE_FRAME_RENDER_TIME && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            videoDecoder.setOnFrameRenderedListener(new MediaCodec.OnFrameRenderedListener() {
-                @Override
-                public void onFrameRendered(MediaCodec mediaCodec, long presentationTimeUs, long renderTimeNanos) {
-                    long delta = (renderTimeNanos / 1000000L) - (presentationTimeUs / 1000);
-                    if (delta >= 0 && delta < 1000) {
-                        if (USE_FRAME_RENDER_TIME) {
-                            activeWindowVideoStats.totalTimeMs += delta;
-                        }
+        if (USE_FRAME_RENDER_TIME) {
+            videoDecoder.setOnFrameRenderedListener((mediaCodec, presentationTimeUs, renderTimeNanos) -> {
+                long delta = (renderTimeNanos / 1000000L) - (presentationTimeUs / 1000);
+
+                graphicsListener.onGraphicsUpdate(surface, 0, 0, prefs.width, prefs.height);
+
+                if (delta >= 0 && delta < 1000) {
+                    if (USE_FRAME_RENDER_TIME) {
+                        activeWindowVideoStats.totalTimeMs += delta;
                     }
                 }
             }, null);
@@ -792,7 +763,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
                 // For "non-recoverable" exceptions on L+, we can call reset() to recover
                 // without having to recreate the entire decoder again.
-                if (codecRecoveryType.get() == CR_RECOVERY_TYPE_RESET && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                if (codecRecoveryType.get() == CR_RECOVERY_TYPE_RESET) {
                     LimeLog.warning("Trying to reset decoder after CodecException");
                     try {
                         videoDecoder.reset();
@@ -875,7 +846,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             return false;
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && e instanceof CodecException) {
+        if (e instanceof CodecException) {
             CodecException codecExc = (CodecException) e;
 
             if (codecExc.isTransient()) {
@@ -996,7 +967,6 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         long actualFrameTimeDeltaNs = frameTimeNanos - lastRenderedFrameTimeNanos;
         long expectedFrameTimeDeltaNs = 970000000 / refreshRate; // within 97% of the next frame
         if (actualFrameTimeDeltaNs >= expectedFrameTimeDeltaNs) {
-            graphicsListener.onGraphicsUpdate(surface, 0, 0, prefs.width, prefs.height);
             // Render up to one frame when in frame pacing mode.
             //
             // NB: Since the queue limit is 2, we won't starve the decoder of output buffers
@@ -1085,7 +1055,6 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                     videoDecoder.releaseOutputBuffer(lastIndex, System.nanoTime());
                                 }
 
-                                graphicsListener.onGraphicsUpdate(surface, 0, 0, prefs.width, prefs.height);
                                 activeWindowVideoStats.totalFramesRendered++;
                             }
                             else {
@@ -1233,15 +1202,12 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         // Post a quit message to the Choreographer looper (if we have one)
         if (choreographerHandler != null) {
-            choreographerHandler.post(new Runnable() {
-                @Override
-                public void run() {
-                    // Don't allow any further messages to be queued
-                    choreographerHandlerThread.quit();
+            choreographerHandler.post(() -> {
+                // Don't allow any further messages to be queued
+                choreographerHandlerThread.quit();
 
-                    // Deregister the frame callback (if registered)
-                    Choreographer.getInstance().removeFrameCallback(MediaCodecDecoderRenderer.this);
-                }
+                // Deregister the frame callback (if registered)
+                Choreographer.getInstance().removeFrameCallback(MediaCodecDecoderRenderer.this);
             });
         }
     }
