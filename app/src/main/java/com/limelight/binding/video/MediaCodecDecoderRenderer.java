@@ -965,7 +965,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         // Don't render unless a new frame is due. This prevents microstutter when streaming
         // at a frame rate that doesn't match the display (such as 60 FPS on 120 Hz).
         long actualFrameTimeDeltaNs = frameTimeNanos - lastRenderedFrameTimeNanos;
-        long expectedFrameTimeDeltaNs = 850000000 / refreshRate; // within 85% of the next frame
+        long expectedFrameTimeDeltaNs = 800000000 / refreshRate; // within 80% of the next frame
         if (actualFrameTimeDeltaNs >= expectedFrameTimeDeltaNs) {
             // Render up to one frame when in frame pacing mode.
             //
