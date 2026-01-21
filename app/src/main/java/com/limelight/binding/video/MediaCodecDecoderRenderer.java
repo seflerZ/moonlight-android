@@ -531,7 +531,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             format.removeKey(MediaFormat.KEY_HDR_STATIC_INFO);
         }
 
-        format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
+//        format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV444Flexible);
         format.setInteger(MediaFormat.KEY_LATENCY, 1); // 启用低延迟模式（高通专有）
         // 或者使用官方常量（Android 10+）
         format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1);
