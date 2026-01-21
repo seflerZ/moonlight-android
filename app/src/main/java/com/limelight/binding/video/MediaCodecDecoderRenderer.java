@@ -48,7 +48,7 @@ import android.view.SurfaceView;
 
 public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements Choreographer.FrameCallback {
 
-    private static final boolean USE_FRAME_RENDER_TIME = true;
+    private static final boolean USE_FRAME_RENDER_TIME = false;
     private static final boolean FRAME_RENDER_TIME_ONLY = false;
 
     // Used on versions < 5.0
@@ -673,19 +673,19 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             }
         }
 
-        if (USE_FRAME_RENDER_TIME) {
-            videoDecoder.setOnFrameRenderedListener((mediaCodec, presentationTimeUs, renderTimeNanos) -> {
+        videoDecoder.setOnFrameRenderedListener((mediaCodec, presentationTimeUs, renderTimeNanos) -> {
+
+
+            graphicsListener.onGraphicsUpdate(surface, 0, 0, prefs.width, prefs.height);
+
+            if (USE_FRAME_RENDER_TIME) {
                 long delta = (renderTimeNanos / 1000000L) - (presentationTimeUs / 1000);
-
-                graphicsListener.onGraphicsUpdate(surface, 0, 0, prefs.width, prefs.height);
-
                 if (delta >= 0 && delta < 1000) {
-                    if (USE_FRAME_RENDER_TIME) {
-                        activeWindowVideoStats.totalTimeMs += delta;
-                    }
+
+                    activeWindowVideoStats.totalTimeMs += delta;
                 }
-            }, null);
-        }
+            }
+        }, null);
 
         return 0;
     }
@@ -967,12 +967,12 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             return;
         }
 
-        frameTimeNanos -= activity.getWindowManager().getDefaultDisplay().getAppVsyncOffsetNanos();
+        frameTimeNanos += activity.getWindowManager().getDefaultDisplay().getAppVsyncOffsetNanos();
 
-        // Don't render unless a new frame is due. This prevents microstutter when streaming
+        // Don't render unless a new frame is due. This prevents micro stutter when streaming
         // at a frame rate that doesn't match the display (such as 60 FPS on 120 Hz).
         long actualFrameTimeDeltaNs = frameTimeNanos - lastRenderedFrameTimeNanos;
-        long expectedFrameTimeDeltaNs = 850000000 / refreshRate; // within 85% of the next frame
+        long expectedFrameTimeDeltaNs = 800000000 / refreshRate; // within 80% of the next frame
         if (actualFrameTimeDeltaNs >= expectedFrameTimeDeltaNs) {
             // Render up to one frame when in frame pacing mode.
             //
@@ -1045,7 +1045,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                             if (prefs.framePacing != PreferenceConfiguration.FRAME_PACING_BALANCED) {
                                 // Get the last output buffer in the queue
                                 while ((outIndex = videoDecoder.dequeueOutputBuffer(info, 0)) >= 0) {
-                                    videoDecoder.releaseOutputBuffer(lastIndex, 0);
+                                    videoDecoder.releaseOutputBuffer(lastIndex, false);
 
                                     numFramesOut++;
 
