@@ -7,6 +7,8 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -125,8 +127,8 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private int refreshRate;
     private PreferenceConfiguration prefs;
     private Surface surface;
-    private LinkedBlockingQueue<Integer> outputBufferQueue = new LinkedBlockingQueue<>();
-    private long lastRenderedFrameTimeNanos;
+    private BlockingQueue<Integer> outputBufferQueue;
+    private long lastRenderedFrameTimeNanos = 0;
     private HandlerThread choreographerHandlerThread;
     private Handler choreographerHandler;
 
@@ -370,6 +372,8 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         optimalSlicesPerFrame = (byte)Math.max(avcOptimalSlicesPerFrame, hevcOptimalSlicesPerFrame);
         LimeLog.info("Requesting "+optimalSlicesPerFrame+" slices per frame");
 
+
+
         if (consecutiveCrashCount % 2 == 1) {
             refFrameInvalidationAvc = refFrameInvalidationHevc = false;
             LimeLog.warning("Disabling RFI due to previous crash");
@@ -537,6 +541,8 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1);
 
         LimeLog.info("Configuring with format: "+format);
+
+        outputBufferQueue = new ArrayBlockingQueue<>(prefs.incomingFrameQueueSize);
 
         videoDecoder.configure(format, surface, null, 0);
 
@@ -984,7 +990,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                 try {
                     videoDecoder.releaseOutputBuffer(nextOutputBuffer, frameTimeNanos);
 
-                    lastRenderedFrameTimeNanos = frameTimeNanos;
+                    lastRenderedFrameTimeNanos = System.nanoTime();
                     activeWindowVideoStats.totalFramesRendered++;
                 } catch (IllegalStateException ignored) {
                     try {
@@ -1014,7 +1020,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         }
 
         // We use a separate thread to avoid any main thread delays from delaying rendering
-        choreographerHandlerThread = new HandlerThread("Video - Choreographer", Process.THREAD_PRIORITY_DEFAULT + Process.THREAD_PRIORITY_MORE_FAVORABLE);
+        choreographerHandlerThread = new HandlerThread("Video - Choreographer", Process.THREAD_PRIORITY_URGENT_AUDIO);
         choreographerHandlerThread.start();
 
         // Start the frame callbacks
@@ -1028,8 +1034,6 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             @Override
             public void run() {
                 BufferInfo info = new BufferInfo();
-
-                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO);
 
                 while (!stopping) {
                     try {
@@ -1120,7 +1124,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             }
         };
         rendererThread.setName("Video - Renderer (MediaCodec)");
-//        rendererThread.setPriority(Thread.MAX_PRIORITY + 2);
+        rendererThread.setPriority(Thread.MAX_PRIORITY);
         rendererThread.start();
     }
 
