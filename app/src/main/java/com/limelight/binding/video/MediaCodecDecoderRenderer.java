@@ -60,9 +60,9 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private MediaCodecInfo hevcDecoder;
     private MediaCodecInfo av1Decoder;
 
-    private final ArrayList<ByteBuffer> vpsBuffers = new ArrayList<>();
-    private final ArrayList<ByteBuffer> spsBuffers = new ArrayList<>();
-    private final ArrayList<ByteBuffer> ppsBuffers = new ArrayList<>();
+    private final ArrayList<byte[]> vpsBuffers = new ArrayList<>();
+    private final ArrayList<byte[]> spsBuffers = new ArrayList<>();
+    private final ArrayList<byte[]> ppsBuffers = new ArrayList<>();
     private boolean submittedCsd;
     private byte[] currentHdrMetadata;
     private Listener graphicsListener;
@@ -249,9 +249,9 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
     private MediaCodecInfo findAv1Decoder(PreferenceConfiguration prefs) {
         // For now, don't use AV1 unless explicitly requested
-        if (prefs.videoFormat != PreferenceConfiguration.FormatOption.FORCE_AV1) {
-            return null;
-        }
+//        if (prefs.videoFormat != PreferenceConfiguration.FormatOption.FORCE_AV1) {
+//            return null;
+//        }
 
         MediaCodecInfo decoderInfo = MediaCodecHelper.findProbableSafeDecoder("video/av01", -1);
         if (decoderInfo != null) {
@@ -459,13 +459,6 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         // Avoid setting KEY_FRAME_RATE on Lollipop and earlier to reduce compatibility risk
         videoFormat.setInteger(MediaFormat.KEY_FRAME_RATE, refreshRate);
-        // ========== 【核心新增】添加这两行，调整Buffer池大小 ==========
-        // 1. 设置单帧最大尺寸，根据你的分辨率配置，1080P填 32*1024 足够，4K填64*1024
-        videoFormat.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 32 * 1024);
-        // 2. 【关键补充】关闭MediaCodec的自动丢帧，60fps下绝对不能丢帧
-        videoFormat.setInteger(MediaFormat.KEY_FRAME_RATE, 60); // 告诉解码器是60fps流，做针对性优化
-        videoFormat.setInteger(MediaFormat.KEY_PUSH_BLANK_BUFFERS_ON_STOP, 0); // 禁止空帧推送
-
 
         // 通过SurfaceTexture创建Surface A
         surfaceTexture = new SurfaceTexture(0);
@@ -536,9 +529,19 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         }
 
 //        format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV444Flexible);
-        format.setInteger(MediaFormat.KEY_LATENCY, 1); // 启用低延迟模式（高通专有）
-        // 或者使用官方常量（Android 10+）
-        format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1);
+        // HarmonyOS兼容：低延迟选项用try-catch包裹，不支持就忽略
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1);
+            } catch (Exception e) {
+                LimeLog.warning("KEY_LOW_LATENCY not supported: " + e.getMessage());
+            }
+            try {
+                format.setInteger(MediaFormat.KEY_LATENCY, 1);
+            } catch (Exception e) {
+                LimeLog.warning("KEY_LATENCY not supported: " + e.getMessage());
+            }
+        }
 
         LimeLog.info("Configuring with format: "+format);
 
@@ -680,8 +683,6 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         }
 
         videoDecoder.setOnFrameRenderedListener((mediaCodec, presentationTimeUs, renderTimeNanos) -> {
-
-
             graphicsListener.onGraphicsUpdate(surface, 0, 0, prefs.width, prefs.height);
 
             if (USE_FRAME_RENDER_TIME) {
@@ -1346,79 +1347,27 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         }
     }
 
-    // ====================== 新增 性能优化-内存池 & 常量 开始 ======================
-    // 配置：单帧NALU最大尺寸，根据你的分辨率配置，1080P配置25KB足够，4K配50KB即可
-    private static final int MAX_NALU_BUFFER_SIZE = 25 * 1024;
-    // 内存池大小，和MediaCodec的InputBuffer数量匹配即可，无需过大，8个最优
-    private static final int BUFFER_POOL_CAPACITY = 8;
-    // byte[]堆内存池 - 兜底兼容
-    private final ArrayDeque<byte[]> byteBufferPool = new ArrayDeque<>(BUFFER_POOL_CAPACITY);
-    // DirectByteBuffer直接内存池 - 核心优化，零拷贝主力
-    private final ArrayDeque<ByteBuffer> directBufferPool = new ArrayDeque<>(BUFFER_POOL_CAPACITY);
-    // 缓存剩余空间，避免重复计算
-    private int cacheRemainSize = 0;
-    // ====================== 新增 性能优化-内存池 & 常量 结束 ======================
-
-    // ====================== 新增 内存池工具方法 开始 ======================
-    /**
-     * 复用byte数组，避免频繁new byte[]，根治内存抖动+GC
-     */
-    private byte[] acquireByteArray(int needSize) {
-        byte[] buf = byteBufferPool.poll();
-        if (buf == null || buf.length < needSize) {
-            buf = new byte[Math.max(needSize, MAX_NALU_BUFFER_SIZE)];
-        }
-        return buf;
-    }
-
-    /**
-     * 归还byte数组到池中
-     */
-    private void releaseByteArray(byte[] buf) {
-        if (buf != null && byteBufferPool.size() < BUFFER_POOL_CAPACITY) {
-            byteBufferPool.offer(buf);
-        }
-    }
-
-    /**
-     * 复用直接内存ByteBuffer，核心零拷贝优化，MediaCodec最佳实践
-     */
-    private ByteBuffer acquireDirectBuffer(int needSize) {
-        ByteBuffer buf = directBufferPool.poll();
-        if (buf == null || buf.capacity() < needSize) {
-            buf = ByteBuffer.allocateDirect(Math.max(needSize, MAX_NALU_BUFFER_SIZE));
-        }
-        buf.clear();
-        return buf;
-    }
-
-    /**
-     * 归还直接内存ByteBuffer到池中
-     */
-    private void releaseDirectBuffer(ByteBuffer buf) {
-        if (buf != null && buf.isDirect() && directBufferPool.size() < BUFFER_POOL_CAPACITY) {
-            directBufferPool.offer(buf);
-        }
-    }
-    // ====================== 新增 内存池工具方法 结束 ======================
-
     @SuppressWarnings("deprecation")
     @Override
     public int submitDecodeUnit(byte[] decodeUnitData, int decodeUnitLength, int decodeUnitType,
                                 int frameNumber, int frameType, char frameHostProcessingLatency,
                                 long receiveTimeMs, long enqueueTimeMs) {
         if (stopping) {
+            // Don't bother if we're stopping
             return MoonBridge.DR_OK;
         }
 
         if (lastFrameNumber == 0) {
             activeWindowVideoStats.measurementStartTimestamp = SystemClock.uptimeMillis();
         } else if (frameNumber != lastFrameNumber && frameNumber != lastFrameNumber + 1) {
+            // We can receive the same "frame" multiple times if it's an IDR frame.
+            // In that case, each frame start NALU is submitted independently.
             activeWindowVideoStats.framesLost += frameNumber - lastFrameNumber - 1;
             activeWindowVideoStats.totalFrames += frameNumber - lastFrameNumber - 1;
             activeWindowVideoStats.frameLossEvents++;
         }
 
+        // Reset CSD data for each IDR frame
         if (lastFrameNumber != frameNumber && frameType == MoonBridge.FRAME_TYPE_IDR) {
             vpsBuffers.clear();
             spsBuffers.clear();
@@ -1427,6 +1376,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         lastFrameNumber = frameNumber;
 
+        // Flip stats windows roughly every second
         if (SystemClock.uptimeMillis() >= activeWindowVideoStats.measurementStartTimestamp + 1000) {
             if (prefs.enablePerfOverlay) {
                 VideoStats lastTwo = new VideoStats();
@@ -1445,7 +1395,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                     decoder = "(unknown)";
                 }
 
-                float decodeTimeMs = (float) lastTwo.decoderTimeMs / lastTwo.totalFramesReceived;
+                float decodeTimeMs = (float)lastTwo.decoderTimeMs / lastTwo.totalFramesReceived;
                 long rttInfo = MoonBridge.getEstimatedRttInfo();
                 StringBuilder sb = new StringBuilder();
                 sb.append(context.getString(R.string.perf_overlay_streamdetails, initialWidth + "x" + initialHeight, fps.totalFps)).append('\n');
@@ -1453,14 +1403,14 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                 sb.append(context.getString(R.string.perf_overlay_incomingfps, fps.receivedFps)).append('\n');
                 sb.append(context.getString(R.string.perf_overlay_renderingfps, fps.renderedFps)).append('\n');
                 sb.append(context.getString(R.string.perf_overlay_netdrops,
-                        (float) lastTwo.framesLost / lastTwo.totalFrames * 100)).append('\n');
+                        (float)lastTwo.framesLost / lastTwo.totalFrames * 100)).append('\n');
                 sb.append(context.getString(R.string.perf_overlay_netlatency,
-                        (int) (rttInfo >> 32), (int) rttInfo)).append('\n');
+                        (int)(rttInfo >> 32), (int)rttInfo)).append('\n');
                 if (lastTwo.framesWithHostProcessingLatency > 0) {
                     sb.append(context.getString(R.string.perf_overlay_hostprocessinglatency,
-                            (float) lastTwo.minHostProcessingLatency / 10,
-                            (float) lastTwo.maxHostProcessingLatency / 10,
-                            (float) lastTwo.totalHostProcessingLatency / 10 / lastTwo.framesWithHostProcessingLatency)).append('\n');
+                            (float)lastTwo.minHostProcessingLatency / 10,
+                            (float)lastTwo.maxHostProcessingLatency / 10,
+                            (float)lastTwo.totalHostProcessingLatency / 10 / lastTwo.framesWithHostProcessingLatency)).append('\n');
                 }
                 sb.append(context.getString(R.string.perf_overlay_dectime, decodeTimeMs));
                 perfListener.onPerfUpdate(sb.toString());
@@ -1474,129 +1424,214 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         boolean csdSubmittedForThisFrame = false;
 
-        // ===== IDR帧 & CSD配置帧处理分支 =====
+        // IDR frames require special handling for CSD buffer submission
         if (frameType == MoonBridge.FRAME_TYPE_IDR) {
-            // H264 SPS 特殊处理+补丁
+            // H264 SPS
             if (decodeUnitType == MoonBridge.BUFFER_TYPE_SPS && (videoFormat & MoonBridge.VIDEO_FORMAT_MASK_H264) != 0) {
                 numSpsIn++;
+
+                ByteBuffer spsBuf = ByteBuffer.wrap(decodeUnitData);
                 int startSeqLen = decodeUnitData[2] == 0x01 ? 3 : 4;
-                ByteBuffer spsBuf = acquireDirectBuffer(decodeUnitLength);
-                spsBuf.put(decodeUnitData);
+
+                // Skip to the start of the NALU data
                 spsBuf.position(startSeqLen + 1);
 
+                // The H264Utils.readSPS function safely handles
+                // Annex B NALUs (including NALUs with escape sequences)
                 SeqParameterSet sps = H264Utils.readSPS(spsBuf);
 
+                // Some decoders rely on H264 level to decide how many buffers are needed
+                // Since we only need one frame buffered, we'll set the level as low as we can
+                // for known resolution combinations. Reference frame invalidation may need
+                // these, so leave them be for those decoders.
                 if (!refFrameInvalidationActive) {
                     if (initialWidth <= 720 && initialHeight <= 480 && refreshRate <= 60) {
+                        // Max 5 buffered frames at 720x480x60
+                        LimeLog.info("Patching level_idc to 31");
                         sps.levelIdc = 31;
-                    } else if (initialWidth <= 1280 && initialHeight <= 720 && refreshRate <= 60) {
+                    }
+                    else if (initialWidth <= 1280 && initialHeight <= 720 && refreshRate <= 60) {
+                        // Max 5 buffered frames at 1280x720x60
+                        LimeLog.info("Patching level_idc to 32");
                         sps.levelIdc = 32;
-                    } else if (initialWidth <= 1920 && initialHeight <= 1080 && refreshRate <= 60) {
+                    }
+                    else if (initialWidth <= 1920 && initialHeight <= 1080 && refreshRate <= 60) {
+                        // Max 4 buffered frames at 1920x1080x64
+                        LimeLog.info("Patching level_idc to 42");
                         sps.levelIdc = 42;
+                    }
+                    else {
+                        // Leave the profile alone (currently 5.0)
                     }
                 }
 
+                // TI OMAP4 requires a reference frame count of 1 to decode successfully. Exynos 4
+                // also requires this fixup.
+                //
+                // I'm doing this fixup for all devices because I haven't seen any devices that
+                // this causes issues for. At worst, it seems to do nothing and at best it fixes
+                // issues with video lag, hangs, and crashes.
+                //
+                // It does break reference frame invalidation, so we will not do that for decoders
+                // where we've enabled reference frame invalidation.
                 if (!refFrameInvalidationActive) {
+                    LimeLog.info("Patching num_ref_frames in SPS");
                     sps.numRefFrames = 1;
                 }
 
-                if (sps.vuiParams == null) {
-                    sps.vuiParams = new VUIParameters();
+                // GFE 2.5.11 changed the SPS to add additional extensions. Some devices don't like these
+                // so we remove them here on old devices unless these devices also support HEVC.
+                // See getPreferredColorSpace() for further information.
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O &&
+                        sps.vuiParams != null &&
+                        hevcDecoder == null &&
+                        av1Decoder == null) {
+                    sps.vuiParams.videoSignalTypePresentFlag = false;
+                    sps.vuiParams.colourDescriptionPresentFlag = false;
+                    sps.vuiParams.chromaLocInfoPresentFlag = false;
                 }
 
-                if (sps.vuiParams.bitstreamRestriction == null) {
-                    sps.vuiParams.bitstreamRestriction = new VUIParameters.BitstreamRestriction();
-                    sps.vuiParams.bitstreamRestriction.motionVectorsOverPicBoundariesFlag = true;
-                    sps.vuiParams.bitstreamRestriction.maxBytesPerPicDenom = 2;
-                    sps.vuiParams.bitstreamRestriction.maxBitsPerMbDenom = 1;
-                    sps.vuiParams.bitstreamRestriction.log2MaxMvLengthHorizontal = 16;
-                    sps.vuiParams.bitstreamRestriction.log2MaxMvLengthVertical = 16;
-                    sps.vuiParams.bitstreamRestriction.numReorderFrames = 0;
+                // Some older devices used to choke on a bitstream restrictions, so we won't provide them
+                // unless explicitly whitelisted. For newer devices, leave the bitstream restrictions present.
+                if (needsSpsBitstreamFixup || isExynos4 || Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    // The SPS that comes in the current H264 bytestream doesn't set bitstream_restriction_flag
+                    // or max_dec_frame_buffering which increases decoding latency on Tegra.
+
+                    // If the encoder didn't include VUI parameters in the SPS, add them now
+                    if (sps.vuiParams == null) {
+                        LimeLog.info("Adding VUI parameters");
+                        sps.vuiParams = new VUIParameters();
+                    }
+
+                    // GFE 2.5.11 started sending bitstream restrictions
+                    if (sps.vuiParams.bitstreamRestriction == null) {
+                        LimeLog.info("Adding bitstream restrictions");
+                        sps.vuiParams.bitstreamRestriction = new VUIParameters.BitstreamRestriction();
+                        sps.vuiParams.bitstreamRestriction.motionVectorsOverPicBoundariesFlag = true;
+                        sps.vuiParams.bitstreamRestriction.maxBytesPerPicDenom = 2;
+                        sps.vuiParams.bitstreamRestriction.maxBitsPerMbDenom = 1;
+                        sps.vuiParams.bitstreamRestriction.log2MaxMvLengthHorizontal = 16;
+                        sps.vuiParams.bitstreamRestriction.log2MaxMvLengthVertical = 16;
+                        sps.vuiParams.bitstreamRestriction.numReorderFrames = 0;
+                    }
+                    else {
+                        LimeLog.info("Patching bitstream restrictions");
+                    }
+
+                    // Some devices throw errors if maxDecFrameBuffering < numRefFrames
+                    sps.vuiParams.bitstreamRestriction.maxDecFrameBuffering = sps.numRefFrames;
+
+                    // These values are the defaults for the fields, but they are more aggressive
+                    // than what GFE sends in 2.5.11, but it doesn't seem to cause picture problems.
+                    // We'll leave these alone for "modern" devices just in case they care.
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                        sps.vuiParams.bitstreamRestriction.maxBytesPerPicDenom = 2;
+                        sps.vuiParams.bitstreamRestriction.maxBitsPerMbDenom = 1;
+                    }
+
+                    // log2_max_mv_length_horizontal and log2_max_mv_length_vertical are set to more
+                    // conservative values by GFE 2.5.11. We'll let those values stand.
+                }
+                else if (sps.vuiParams != null) {
+                    // Devices that didn't/couldn't get bitstream restrictions before GFE 2.5.11
+                    // will continue to not receive them now
+                    sps.vuiParams.bitstreamRestriction = null;
                 }
 
-                sps.vuiParams.bitstreamRestriction.maxDecFrameBuffering = sps.numRefFrames;
-
+                // If we need to hack this SPS to say we're baseline, do so now
                 if (needsBaselineSpsHack) {
+                    LimeLog.info("Hacking SPS to baseline");
                     sps.profileIdc = 66;
                     savedSps = sps;
                 }
 
+                // Patch the SPS constraint flags
                 doProfileSpecificSpsPatching(sps);
 
+                // The H264Utils.writeSPS function safely handles
+                // Annex B NALUs (including NALUs with escape sequences)
                 ByteBuffer escapedNalu = H264Utils.writeSPS(sps, decodeUnitLength);
-                int spsFinalLen = startSeqLen + 1 + escapedNalu.limit();
-                ByteBuffer csdBuf = acquireDirectBuffer(spsFinalLen);
-                csdBuf.put(decodeUnitData, 0, startSeqLen + 1);
-                csdBuf.put(escapedNalu);
-                csdBuf.flip();
-                spsBuffers.add(csdBuf);
 
-                // 用完即归还，无内存泄漏
-                releaseDirectBuffer(spsBuf);
-                releaseDirectBuffer(escapedNalu);
+                // Construct the patched SPS
+                byte[] naluBuffer = new byte[startSeqLen + 1 + escapedNalu.limit()];
+                System.arraycopy(decodeUnitData, 0, naluBuffer, 0, startSeqLen + 1);
+                escapedNalu.get(naluBuffer, startSeqLen + 1, escapedNalu.limit());
+
+                // Batch this to submit together with other CSD per AOSP docs
+                spsBuffers.add(naluBuffer);
                 return MoonBridge.DR_OK;
             }
-            // HEVC VPS帧
             else if (decodeUnitType == MoonBridge.BUFFER_TYPE_VPS) {
                 numVpsIn++;
-                ByteBuffer csdBuf = acquireDirectBuffer(decodeUnitLength);
-                csdBuf.put(decodeUnitData, 0, decodeUnitLength);
-                csdBuf.flip();
-                vpsBuffers.add(csdBuf);
+
+                // Batch this to submit together with other CSD per AOSP docs
+                byte[] naluBuffer = new byte[decodeUnitLength];
+                System.arraycopy(decodeUnitData, 0, naluBuffer, 0, decodeUnitLength);
+                vpsBuffers.add(naluBuffer);
                 return MoonBridge.DR_OK;
             }
-            // HEVC SPS帧
+            // Only the HEVC SPS hits this path (H.264 is handled above)
             else if (decodeUnitType == MoonBridge.BUFFER_TYPE_SPS) {
                 numSpsIn++;
-                ByteBuffer csdBuf = acquireDirectBuffer(decodeUnitLength);
-                csdBuf.put(decodeUnitData, 0, decodeUnitLength);
-                csdBuf.flip();
-                spsBuffers.add(csdBuf);
+
+                // Batch this to submit together with other CSD per AOSP docs
+                byte[] naluBuffer = new byte[decodeUnitLength];
+                System.arraycopy(decodeUnitData, 0, naluBuffer, 0, decodeUnitLength);
+                spsBuffers.add(naluBuffer);
                 return MoonBridge.DR_OK;
             }
-            // PPS帧 通用
             else if (decodeUnitType == MoonBridge.BUFFER_TYPE_PPS) {
                 numPpsIn++;
-                ByteBuffer csdBuf = acquireDirectBuffer(decodeUnitLength);
-                csdBuf.put(decodeUnitData, 0, decodeUnitLength);
-                csdBuf.flip();
-                ppsBuffers.add(csdBuf);
+
+                // Batch this to submit together with other CSD per AOSP docs
+                byte[] naluBuffer = new byte[decodeUnitLength];
+                System.arraycopy(decodeUnitData, 0, naluBuffer, 0, decodeUnitLength);
+                ppsBuffers.add(naluBuffer);
                 return MoonBridge.DR_OK;
             }
-            // IDR帧的非CSD数据，提交缓存的CSD配置
             else if ((videoFormat & (MoonBridge.VIDEO_FORMAT_MASK_H264 | MoonBridge.VIDEO_FORMAT_MASK_H265)) != 0) {
+                // If this is the first CSD blob or we aren't supporting fused IDR frames, we will
+                // submit the CSD blob in a separate input buffer for each IDR frame.
                 if (!submittedCsd || !fusedIdrFrame) {
                     if (!fetchNextInputBuffer()) {
                         return MoonBridge.DR_NEED_IDR;
                     }
-                    for (ByteBuffer buf : vpsBuffers) {
-                        nextInputBuffer.put(buf);
+
+                    // Submit all CSD when we receive the first non-CSD blob in an IDR frame
+                    for (byte[] vpsBuffer : vpsBuffers) {
+                        nextInputBuffer.put(vpsBuffer);
                     }
-                    for (ByteBuffer buf : spsBuffers) {
-                        nextInputBuffer.put(buf);
+                    for (byte[] spsBuffer : spsBuffers) {
+                        nextInputBuffer.put(spsBuffer);
                     }
-                    for (ByteBuffer buf : ppsBuffers) {
-                        nextInputBuffer.put(buf);
+                    for (byte[] ppsBuffer : ppsBuffers) {
+                        nextInputBuffer.put(ppsBuffer);
                     }
 
                     if (!queueNextInputBuffer(0, MediaCodec.BUFFER_FLAG_CODEC_CONFIG)) {
                         return MoonBridge.DR_NEED_IDR;
                     }
 
+                    // Remember that we already submitted CSD for this frame, so we don't do it
+                    // again in the fused IDR case below.
                     csdSubmittedForThisFrame = true;
+
+                    // Remember that we submitted CSD globally for this MediaCodec instance
                     submittedCsd = true;
 
                     if (needsBaselineSpsHack) {
                         needsBaselineSpsHack = false;
+
                         if (!replaySps()) {
                             return MoonBridge.DR_NEED_IDR;
                         }
+
+                        LimeLog.info("SPS replay complete");
                     }
                 }
             }
         }
 
-        // ===== 统计数据更新 =====
         if (frameHostProcessingLatency != 0) {
             if (activeWindowVideoStats.minHostProcessingLatency != 0) {
                 activeWindowVideoStats.minHostProcessingLatency = (char) Math.min(activeWindowVideoStats.minHostProcessingLatency, frameHostProcessingLatency);
@@ -1612,44 +1647,48 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         activeWindowVideoStats.totalFrames++;
 
         if (!FRAME_RENDER_TIME_ONLY) {
+            // Count time from first packet received to enqueue time as receive time
+            // We will count DU queue time as part of decoding, because it is directly
+            // caused by a slow decoder.
             activeWindowVideoStats.totalTimeMs += enqueueTimeMs - receiveTimeMs;
         }
 
-        // ===== 获取输入缓冲区 =====
         if (!fetchNextInputBuffer()) {
             return MoonBridge.DR_NEED_IDR;
         }
 
         int codecFlags = 0;
-        // IDR帧增加同步帧标记
+
         if (frameType == MoonBridge.FRAME_TYPE_IDR) {
             codecFlags |= MediaCodec.BUFFER_FLAG_SYNC_FRAME;
+
+            // If we are using fused IDR frames, submit the CSD with each IDR frame
             if (fusedIdrFrame && !csdSubmittedForThisFrame) {
-                for (ByteBuffer buf : vpsBuffers) {
-                    nextInputBuffer.put(buf);
+                for (byte[] vpsBuffer : vpsBuffers) {
+                    nextInputBuffer.put(vpsBuffer);
                 }
-                for (ByteBuffer buf : spsBuffers) {
-                    nextInputBuffer.put(buf);
+                for (byte[] spsBuffer : spsBuffers) {
+                    nextInputBuffer.put(spsBuffer);
                 }
-                for (ByteBuffer buf : ppsBuffers) {
-                    nextInputBuffer.put(buf);
+                for (byte[] ppsBuffer : ppsBuffers) {
+                    nextInputBuffer.put(ppsBuffer);
                 }
             }
         }
 
-        // ===== 时间戳处理 =====
         long timestampUs = enqueueTimeMs * 1000;
         if (timestampUs <= lastTimestampUs) {
+            // We can't submit multiple buffers with the same timestamp
+            // so bump it up by one before queuing
             timestampUs = lastTimestampUs + 1;
         }
         lastTimestampUs = timestampUs;
 
         numFramesIn++;
-        // 缓存剩余空间，避免重复计算limit-position
-        cacheRemainSize = nextInputBuffer.remaining();
-        if (decodeUnitLength > cacheRemainSize) {
+
+        if (decodeUnitLength > nextInputBuffer.limit() - nextInputBuffer.position()) {
             IllegalArgumentException exception = new IllegalArgumentException(
-                    "Decode unit length " + decodeUnitLength + " too large for input buffer " + nextInputBuffer.limit());
+                    "Decode unit length "+decodeUnitLength+" too large for input buffer "+nextInputBuffer.limit());
             if (!reportedCrash) {
                 reportedCrash = true;
                 crashListener.notifyCrash(exception);
@@ -1657,10 +1696,8 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             throw new RendererException(this, exception);
         }
 
-        // ===== 写入解码数据，无任何拷贝损耗 =====
         nextInputBuffer.put(decodeUnitData, 0, decodeUnitLength);
 
-        // ===== 提交解码数据 =====
         if (!queueNextInputBuffer(timestampUs, codecFlags)) {
             return MoonBridge.DR_NEED_IDR;
         }
