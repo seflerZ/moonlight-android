@@ -12,12 +12,17 @@ android {
         minSdkVersion minApi
         targetSdkVersion targetApi
 
+        // externalNativeBuild 默认 shared,让 release / debug 都跑同一份 ndkBuild 配置,
+        // 避免 release 漏 .aar jni/。
+        externalNativeBuild {
+            ndkBuild {
+                arguments "PRODUCT_FLAVOR=nonRoot"
+            }
+        }
 
         // Generate native debug symbols to allow Google Play to symbolicate our native crashes
         ndk.debugSymbolLevel = 'FULL'
     }
-
-    flavorDimensions.add("root")
 
     buildFeatures {
         buildConfig = true
@@ -31,12 +36,6 @@ android {
 
     buildTypes {
         debug {
-            externalNativeBuild {
-                ndkBuild {
-                    arguments "PRODUCT_FLAVOR=nonRoot"
-                }
-            }
-
             buildConfigField "boolean", "ROOT_BUILD", "false"
 
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
