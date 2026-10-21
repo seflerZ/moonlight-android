@@ -147,8 +147,13 @@ public class AndroidAudioRenderer implements AudioRenderer {
 
             switch (i) {
                 case 0:
-                case 2:
                     bufferSize = bytesPerFrame * 2;
+                    break;
+
+                case 2:
+                    // Standard (non low-latency) path: the platform mixer adds its own
+                    // latency, so a 2-frame buffer only buys underrun glitches. Use 4 frames.
+                    bufferSize = bytesPerFrame * 4;
                     break;
 
                 case 1:
@@ -207,11 +212,13 @@ public class AndroidAudioRenderer implements AudioRenderer {
 
     @Override
     public void playDecodedAudio(short[] audioData) {
-        // Only queue up to 40 ms of pending audio data in addition to what AudioTrack is buffering for us.
-        if (MoonBridge.getPendingAudioDuration() < 40) {
+        // Only queue up to 100 ms of pending audio data in addition to what AudioTrack is buffering for us.
+        // The old limit was 40 ms, which turned every scheduling hiccup or packet
+        // retransmit burst into a dropped 5 ms Opus frame - an audible click.
+        if (MoonBridge.getPendingAudioDuration() < 100) {
             // This will block until the write is completed. That can cause a backlog
             // of pending audio data, so we do the above check to be able to bound
-            // latency at 40 ms in that situation.
+            // latency at 100 ms in that situation.
             track.write(audioData, 0, audioData.length);
         }
         else {
