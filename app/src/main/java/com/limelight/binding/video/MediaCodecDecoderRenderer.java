@@ -113,7 +113,13 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
     private boolean needsBaselineSpsHack;
     private SeqParameterSet savedSps;
-    private SurfaceTexture surfaceTexture;
+    private SurfaceTexture offscreenTexture;
+    private Surface offscreenSurface;
+    private final Object outputSurfaceLock = new Object();
+    private volatile Surface requestedSurface;
+    private volatile boolean renderOffscreen = true;
+    private volatile boolean released;
+    private volatile boolean configured;
     private RendererException initialException;
     private long initialExceptionTimestamp;
     private static final int EXCEPTION_REPORT_DELAY_MS = 3000;
@@ -127,10 +133,21 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private int refreshRate;
     private PreferenceConfiguration prefs;
     private Surface surface;
-    private BlockingQueue<Integer> outputBufferQueue;
+    private BlockingQueue<QueuedOutputBuffer> outputBufferQueue;
     private long lastRenderedFrameTimeNanos = 0;
     private HandlerThread choreographerHandlerThread;
     private Handler choreographerHandler;
+
+    /** A decoded frame waiting for its vsync, tagged with its arrival time. */
+    private static final class QueuedOutputBuffer {
+        final int index;
+        final long enqueueNanos;
+
+        QueuedOutputBuffer(int index, long enqueueNanos) {
+            this.index = index;
+            this.enqueueNanos = enqueueNanos;
+        }
+    }
 
     private int numSpsIn;
     private int numPpsIn;
@@ -285,6 +302,88 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
     public void setRenderTarget(SurfaceHolder renderTarget) {
         this.renderTarget = renderTarget;
+        requestOutputSurface(renderTarget != null ? renderTarget.getSurface() : null);
+    }
+
+    /**
+     * Switches the codec's output between the app's SurfaceView and the private
+     * offscreen surface (used while the view's surface does not exist, e.g. in
+     * the background or during rotation).
+     */
+    public void requestOutputSurface(Surface newSurface) {
+        if (newSurface != null && !newSurface.isValid()) {
+            newSurface = null;
+        }
+        synchronized (outputSurfaceLock) {
+            requestedSurface = newSurface;
+
+            MediaCodec decoder = videoDecoder;
+            if (released || !configured || decoder == null) {
+                // Not started yet (the requested surface is picked up by
+                // configureAndStartDecoder) or already torn down.
+                return;
+            }
+
+            Surface target = newSurface != null ? newSurface : getOffscreenSurface();
+            boolean offscreen = (target == offscreenSurface);
+            if (target == surface) {
+                renderOffscreen = offscreen;
+                return;
+            }
+
+            try {
+                decoder.setOutputSurface(target);
+                surface = target;
+                renderOffscreen = offscreen;
+            } catch (IllegalStateException | IllegalArgumentException e) {
+                LimeLog.warning("setOutputSurface failed: " + e.getMessage());
+                Surface off = getOffscreenSurface();
+                try {
+                    decoder.setOutputSurface(off);
+                    surface = off;
+                    renderOffscreen = true;
+                } catch (RuntimeException e2) {
+                    codecRecoveryType.compareAndSet(
+                            CR_RECOVERY_TYPE_NONE, CR_RECOVERY_TYPE_RESTART);
+                }
+            }
+        }
+    }
+
+    /** Surface that receives frames when the app's SurfaceView is not available. */
+    private Surface getOffscreenSurface() {
+        if (offscreenSurface == null) {
+            // No consumer and no updateTexImage(): frames are never rendered here
+            // (see releaseOutputBuffer), they are just discarded by the codec.
+            offscreenTexture = new SurfaceTexture(0);
+            int w = Math.max(1, initialWidth);
+            int h = Math.max(1, initialHeight);
+            offscreenTexture.setDefaultBufferSize(w, h);
+            offscreenSurface = new Surface(offscreenTexture);
+        }
+        return offscreenSurface;
+    }
+
+    private Surface chooseConfigureSurface() {
+        Surface target = requestedSurface;
+        if (target != null && target.isValid()) {
+            renderOffscreen = false;
+            return target;
+        }
+        renderOffscreen = true;
+        return getOffscreenSurface();
+    }
+
+    /**
+     * Renders a decoded buffer to the current output surface, or discards it when
+     * output is going offscreen (the offscreen SurfaceTexture has no consumer).
+     */
+    private void releaseOutputBuffer(int index, long timestampNs) {
+        if (renderOffscreen) {
+            videoDecoder.releaseOutputBuffer(index, false);
+        } else {
+            videoDecoder.releaseOutputBuffer(index, timestampNs);
+        }
     }
 
     public MediaCodecDecoderRenderer(Activity activity, PreferenceConfiguration prefs,
@@ -467,14 +566,6 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         videoFormat.setInteger(MediaFormat.KEY_PUSH_BLANK_BUFFERS_ON_STOP, 0); // 禁止空帧推送
 
 
-        // 通过SurfaceTexture创建Surface A
-        surfaceTexture = new SurfaceTexture(0);
-        surface = new Surface(surfaceTexture);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            surface.setFrameRate(60, Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE);
-        }
-
-
         // Adaptive playback can also be enabled by the whitelist on pre-KitKat devices
         // so we don't fill these pre-KitKat
         if (adaptivePlayback) {
@@ -546,6 +637,8 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         outputBufferQueue = new ArrayBlockingQueue<>(prefs.incomingFrameQueueSize);
 
+        surface = chooseConfigureSurface();
+        configured = false;
         videoDecoder.configure(format, surface, null, 0);
 
         configuredFormat = format;
@@ -564,6 +657,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         // Start the decoder
         videoDecoder.start();
+        configured = true;
     }
 
     private boolean tryConfigureDecoder(MediaCodecInfo selectedDecoderInfo, MediaFormat format, boolean throwOnCodecError) {
@@ -987,20 +1081,20 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             }
         }
 
-        // NB: Since the queue limit is 2, we won't starve the decoder of output buffers
-        // by holding onto them for too long. This also ensures we will have that 1 extra
-        // frame of buffer to smooth over network/rendering jitter.
-        Integer nextOutputBuffer = outputBufferQueue.poll();
+        // Consume one frame per vsync in arrival order: the queue is the jitter
+        // buffer. The producer drops the oldest frame when it fills up, which caps
+        // the extra latency at (queue size - 1) frames.
+        QueuedOutputBuffer nextOutputBuffer = outputBufferQueue.poll();
         if (nextOutputBuffer != null) {
             try {
-                videoDecoder.releaseOutputBuffer(nextOutputBuffer, frameTimeNanos);
+                releaseOutputBuffer(nextOutputBuffer.index, frameTimeNanos);
 
                 lastRenderedFrameTimeNanos = System.nanoTime();
                 activeWindowVideoStats.totalFramesRendered++;
             } catch (IllegalStateException ignored) {
                 try {
                     // Try to avoid leaking the output buffer by releasing it without rendering
-                    videoDecoder.releaseOutputBuffer(nextOutputBuffer, false);
+                    videoDecoder.releaseOutputBuffer(nextOutputBuffer.index, false);
                 } catch (IllegalStateException e) {
                     // This will leak nextOutputBuffer, but there's really nothing else we can do
 //                        e.printStackTrace();
@@ -1065,12 +1159,12 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                         prefs.framePacing == PreferenceConfiguration.FRAME_PACING_CAP_FPS) {
                                     // In max smoothness or cap FPS mode, we want to never drop frames
                                     // Use a PTS that will cause this frame to never be dropped
-                                    videoDecoder.releaseOutputBuffer(lastIndex, 0);
+                                    releaseOutputBuffer(lastIndex, 0);
                                 }
                                 else {
                                     // Use a PTS that will cause this frame to be dropped if another comes in within
                                     // the same V-sync period
-                                    videoDecoder.releaseOutputBuffer(lastIndex, System.nanoTime());
+                                    releaseOutputBuffer(lastIndex, System.nanoTime());
                                 }
 
                                 activeWindowVideoStats.totalFramesRendered++;
@@ -1086,7 +1180,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                 // refresh rate).
                                 if (outputBufferQueue.size() >= prefs.incomingFrameQueueSize) {
                                     try {
-                                        videoDecoder.releaseOutputBuffer(outputBufferQueue.take(), false);
+                                        videoDecoder.releaseOutputBuffer(outputBufferQueue.take().index, false);
                                     } catch (InterruptedException e) {
                                         // We're shutting down, so we can just drop this buffer on the floor
                                         // and it will be reclaimed when the codec is released.
@@ -1095,7 +1189,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                 }
 
                                 // Add this buffer
-                                outputBufferQueue.add(lastIndex);
+                                outputBufferQueue.add(new QueuedOutputBuffer(lastIndex, System.nanoTime()));
                             }
 
                             // Add delta time to the totals (excluding probable outliers)
@@ -1263,7 +1357,25 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
     @Override
     public void cleanup() {
-        videoDecoder.release();
+        synchronized (outputSurfaceLock) {
+            released = true;
+            configured = false;
+            if (videoDecoder != null) {
+                try {
+                    videoDecoder.release();
+                } catch (RuntimeException ignored) {
+                }
+                videoDecoder = null;
+            }
+            if (offscreenSurface != null) {
+                offscreenSurface.release();
+                offscreenSurface = null;
+            }
+            if (offscreenTexture != null) {
+                offscreenTexture.release();
+                offscreenTexture = null;
+            }
+        }
     }
 
     @Override
