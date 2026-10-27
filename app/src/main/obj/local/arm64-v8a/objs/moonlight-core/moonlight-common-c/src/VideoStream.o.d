@@ -10,7 +10,8 @@
   /home/sefler/remote-desktop-clients/remoteClientLib/jni/libs/deps/moonlight-android/app/src/main/jni/moonlight-core/moonlight-common-c/src/LinkedBlockingQueue.h \
   /home/sefler/remote-desktop-clients/remoteClientLib/jni/libs/deps/moonlight-android/app/src/main/jni/moonlight-core/moonlight-common-c/src/Input.h \
   /home/sefler/remote-desktop-clients/remoteClientLib/jni/libs/deps/moonlight-android/app/src/main/jni/moonlight-core/moonlight-common-c/src/RtpAudioQueue.h \
-  /home/sefler/remote-desktop-clients/remoteClientLib/jni/libs/deps/moonlight-android/app/src/main/jni/moonlight-core/moonlight-common-c/reedsolomon/rs.h \
+  /home/sefler/remote-desktop-clients/remoteClientLib/jni/libs/deps/moonlight-android/app/src/main/jni/moonlight-core/moonlight-common-c/nanors/rs.h \
+  /home/sefler/remote-desktop-clients/remoteClientLib/jni/libs/deps/moonlight-android/app/src/main/jni/moonlight-core/moonlight-common-c/nanors/deps/obl/oblas_common.h \
   /home/sefler/remote-desktop-clients/remoteClientLib/jni/libs/deps/moonlight-android/app/src/main/jni/moonlight-core/moonlight-common-c/src/RtpVideoQueue.h \
   /home/sefler/remote-desktop-clients/remoteClientLib/jni/libs/deps/moonlight-android/app/src/main/jni/moonlight-core/moonlight-common-c/src/ByteBuffer.h \
   /home/sefler/remote-desktop-clients/remoteClientLib/jni/libs/deps/moonlight-android/app/src/main/jni/moonlight-core/moonlight-common-c/enet/include/enet/enet.h \
@@ -29,7 +30,8 @@
 /home/sefler/remote-desktop-clients/remoteClientLib/jni/libs/deps/moonlight-android/app/src/main/jni/moonlight-core/moonlight-common-c/src/LinkedBlockingQueue.h:
 /home/sefler/remote-desktop-clients/remoteClientLib/jni/libs/deps/moonlight-android/app/src/main/jni/moonlight-core/moonlight-common-c/src/Input.h:
 /home/sefler/remote-desktop-clients/remoteClientLib/jni/libs/deps/moonlight-android/app/src/main/jni/moonlight-core/moonlight-common-c/src/RtpAudioQueue.h:
-/home/sefler/remote-desktop-clients/remoteClientLib/jni/libs/deps/moonlight-android/app/src/main/jni/moonlight-core/moonlight-common-c/reedsolomon/rs.h:
+/home/sefler/remote-desktop-clients/remoteClientLib/jni/libs/deps/moonlight-android/app/src/main/jni/moonlight-core/moonlight-common-c/nanors/rs.h:
+/home/sefler/remote-desktop-clients/remoteClientLib/jni/libs/deps/moonlight-android/app/src/main/jni/moonlight-core/moonlight-common-c/nanors/deps/obl/oblas_common.h:
 /home/sefler/remote-desktop-clients/remoteClientLib/jni/libs/deps/moonlight-android/app/src/main/jni/moonlight-core/moonlight-common-c/src/RtpVideoQueue.h:
 /home/sefler/remote-desktop-clients/remoteClientLib/jni/libs/deps/moonlight-android/app/src/main/jni/moonlight-core/moonlight-common-c/src/ByteBuffer.h:
 /home/sefler/remote-desktop-clients/remoteClientLib/jni/libs/deps/moonlight-android/app/src/main/jni/moonlight-core/moonlight-common-c/enet/include/enet/enet.h:
