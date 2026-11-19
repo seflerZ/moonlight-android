@@ -5,6 +5,7 @@ plugins {
 
 android {
     compileSdkVersion compileApi
+    compileSdkMinor compileMinor
 
     namespace 'com.limelight'
 
