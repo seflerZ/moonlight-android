@@ -763,8 +763,7 @@ public class MediaCodecHelper {
             return false;
         }
 
-        // TODO: Test some AV1 decoders
-        return false;
+        return true;
     }
 
     @SuppressWarnings("deprecation")

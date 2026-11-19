@@ -42,3 +42,7 @@ app/.externalNativeBuild/
 
 # NDK stuff
 .cxx/
+
+.memex/
+# ndk-build 的 .d 依赖文件里嵌了构建机的绝对路径，提交进去会在别的机器/NDK 上炸
+*.o.d

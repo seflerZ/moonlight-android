@@ -213,7 +213,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         initialControllers = getAttachedControllerMask(activityContext);
 
         // Register ourselves for input device notifications
-        inputManager.registerInputDeviceListener(this, null);
+        inputManager.registerInputDeviceListener(this, mainThreadHandler);
     }
 
     private static InputDevice.MotionRange getMotionRangeForJoystickAxis(InputDevice dev, int axis) {
@@ -334,35 +334,38 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
             return true;
         }
 
-        if (hasJoystickAxes(device) || hasGamepadButtons(device)) {
+        // Some modern keyboards also have joystick axes
+        if (hasJoystickAxes(device) && hasGamepadButtons(device)) {
             // Has real joystick axes or gamepad buttons
             return true;
         }
 
+        return false;
+
         // HACK for https://issuetracker.google.com/issues/163120692
-        if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
-            if (device.getId() == -1) {
-                // This "virtual" device could be input from any of the attached devices.
-                // Look to see if any gamepads are connected.
-                int[] ids = InputDevice.getDeviceIds();
-                for (int id : ids) {
-                    InputDevice dev = InputDevice.getDevice(id);
-                    if (dev == null) {
-                        // This device was removed during enumeration
-                        continue;
-                    }
-
-                    // If there are any gamepad devices connected, we'll
-                    // report that this virtual device is a gamepad.
-                    if (hasJoystickAxes(dev) || hasGamepadButtons(dev)) {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        // Otherwise, we'll try anything that claims to be a non-alphabetic keyboard
-        return device.getKeyboardType() != InputDevice.KEYBOARD_TYPE_ALPHABETIC;
+//        if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
+//            if (device.getId() == -1) {
+//                // This "virtual" device could be input from any of the attached devices.
+//                // Look to see if any gamepads are connected.
+//                int[] ids = InputDevice.getDeviceIds();
+//                for (int id : ids) {
+//                    InputDevice dev = InputDevice.getDevice(id);
+//                    if (dev == null) {
+//                        // This device was removed during enumeration
+//                        continue;
+//                    }
+//
+//                    // If there are any gamepad devices connected, we'll
+//                    // report that this virtual device is a gamepad.
+//                    if (hasJoystickAxes(dev) || hasGamepadButtons(dev)) {
+//                        return true;
+//                    }
+//                }
+//            }
+//        }
+//
+//        // Otherwise, we'll try anything that claims to be a non-alphabetic keyboard
+//        return device.getKeyboardType() != InputDevice.KEYBOARD_TYPE_ALPHABETIC;
     }
 
     public static short getAttachedControllerMask(Context context) {
@@ -2337,26 +2340,22 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
             keyCode = handleFlipFaceButtons(keyCode);
         }
 
-        // If the button hasn't been down long enough, sleep for a bit before sending the up event
-        // This allows "instant" button presses (like OUYA's virtual menu button) to work. This
-        // path should not be triggered during normal usage.
+        // If the button hasn't been down long enough, delay the up event instead of
+        // blocking the UI thread with a sleep. This allows "instant" button presses
+        // (like OUYA's virtual menu button) to work, without stalling rendering.
         int buttonDownTime = (int)(event.getEventTime() - event.getDownTime());
-        if (buttonDownTime < ControllerHandler.MINIMUM_BUTTON_DOWN_TIME_MS)
-        {
-            // Since our sleep time is so short (<= 25 ms), it shouldn't cause a problem doing this
-            // in the UI thread.
-            try {
-                Thread.sleep(ControllerHandler.MINIMUM_BUTTON_DOWN_TIME_MS - buttonDownTime);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-
-                // InterruptedException clears the thread's interrupt status. Since we can't
-                // handle that here, we will re-interrupt the thread to set the interrupt
-                // status back to true.
-                Thread.currentThread().interrupt();
-            }
+        int upDelay = ControllerHandler.MINIMUM_BUTTON_DOWN_TIME_MS - buttonDownTime;
+        final int upKeyCode = keyCode;
+        if (upDelay > 0) {
+            mainThreadHandler.postDelayed(
+                    () -> handleButtonUpDeferred(event, context, upKeyCode), upDelay);
+            return true;
         }
 
+        return handleButtonUpDeferred(event, context, upKeyCode);
+    }
+
+    private boolean handleButtonUpDeferred(KeyEvent event, InputDeviceContext context, int keyCode) {
         switch (keyCode) {
         case KeyEvent.KEYCODE_BUTTON_MODE:
             context.inputMap &= ~ControllerPacket.SPECIAL_BUTTON_FLAG;
